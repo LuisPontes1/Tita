@@ -8,7 +8,7 @@ from sklearn import metrics
 import datawig
 from sklearn.ensemble import RandomForestRegressor
 import xgboost as xgb
-import tpot as tpt
+#import tpot as tpt
 
 from sklearn import preprocessing
 
@@ -64,7 +64,7 @@ def completeWithMostFrequent(df_inp, df_test_inp, col):
     df_test[col] = df_test[col].fillna(df_aux[col].value_counts().index[0])
     
     return df, df_test
-
+'''
 def completeWithModel(df_inp, df_test_inp, colunas_dropar, colunas_dummerizar, nome_alvo, col_imp, nome_model):
     df = df_inp.copy()
     df_test = df_test_inp.copy()
@@ -150,7 +150,7 @@ def completeWithModel(df_inp, df_test_inp, colunas_dropar, colunas_dummerizar, n
     df_inp_final[col_imp] = df_aux[col_imp]
     df_test_inp_final[col_imp] = df_test_aux[col_imp]
     return df_inp_final, df_test_inp_final
-
+'''
 #-------------------------------------------
 #Funções auxiliares de tratamento para aplicar nos modelos
 
