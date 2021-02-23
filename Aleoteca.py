@@ -3,9 +3,8 @@ import pandas as pd
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import seaborn as sns
-import plotly.graph_objects as go
+from mpl_toolkits.mplot3d import Axes3D
 
 class CortaIntervalosQuasiUniforme:
     
@@ -175,7 +174,7 @@ class CortaIntervalosQuasiUniforme:
     def vetor_discretizado(self):
         return self.ind_cres[self.inds_rec]
     
-    def df_info_discretizacao(self):
+    def info_discretizacao(self):
         min_str = [str(v) for v in self.min_signif]
         max_str = [str(v) for v in self.max_signif]
         min_str = [v if v[-2:] != '.0' else v[:-2] for v in min_str]
@@ -186,11 +185,11 @@ class CortaIntervalosQuasiUniforme:
         return df
     
     #vetor_discretizado() retorna o vetor dado como entrada com a discretização feita
-    #df_info_discretizacao() retorna as informações sobre os intervalos da discretização
+    #info_discretizacao() retorna as informações sobre os intervalos da discretização
 
 #######################################
 
-class Aletricas:
+class AletricasClassificacao:
     
     def __init__(self, y, y_prob, num_por_div = None):
         self.y = y
@@ -201,6 +200,7 @@ class Aletricas:
         self.interv = None
         
         self.qtd_tot = None
+        self.soma_probs = None
         self.qtd1_tot = None
         self.qtd0_tot = None
         
@@ -232,6 +232,15 @@ class Aletricas:
         self.pos_max_ig = None
         self.ig = None
         
+        self.liftF_10 = None
+        self.alavF_10 = None
+        self.liftF_20 = None
+        self.alavF_20 = None
+        self.liftV_10 = None
+        self.alavV_10 = None
+        self.liftV_20 = None
+        self.alavV_20 = None
+        
         self.vetor_p0_ig_2d = None
         self.vetor_p1_ig_2d = None
         self.vetor_ig_2d = None
@@ -242,6 +251,7 @@ class Aletricas:
         
     def ordena_probs(self):
         self.qtd_tot = self.y.size
+        self.soma_probs = np.sum(self.y_prob)
         
         if(self.num_por_div != None):
             self.interv = CortaIntervalosQuasiUniforme(self.y_prob, num_por_div = self.num_por_div)
@@ -272,29 +282,15 @@ class Aletricas:
             A = np.sum(h*dx)
             return A
         
-        if(self.qtd0_tot == 0):
-            self.curva_tnp = np.repeat(1, self.qtds0_acum.size)
-        else:
-            self.curva_tnp = self.qtds0_acum/self.qtd0_tot
-            
-        if(self.qtd1_tot == 0):
-            self.curva_tvp = np.repeat(1, self.qtds1_acum.size)
-        else:
-            self.curva_tvp = self.qtds1_acum_c/self.qtd1_tot
+        self.curva_tnp = self.qtds0_acum/self.qtd0_tot
+        self.curva_tvp = self.qtds1_acum_c/self.qtd1_tot
             
         self.auc = area(self.curva_tnp, self.curva_tvp)
     
     def calcula_ks(self):
     
-        if(self.qtd0_tot == 0):
-            self.curva_revoc0 = np.repeat(1, self.qtds0_acum.size)
-        else:
-            self.curva_revoc0 = self.qtds0_acum/self.qtd0_tot
-
-        if(self.qtd1_tot == 0):
-            self.curva_revoc1 = np.repeat(1, self.qtd1_tot.size)
-        else:
-            self.curva_revoc1 = self.qtds1_acum/self.qtd1_tot
+        self.curva_revoc0 = self.qtds0_acum/self.qtd0_tot
+        self.curva_revoc1 = self.qtds1_acum/self.qtd1_tot
         
         curva_dif = self.curva_revoc0 - self.curva_revoc1
         self.pos_max_dif = np.argmax(curva_dif) #Pega as posições em que encontrou o máximo
@@ -306,6 +302,28 @@ class Aletricas:
         except:
             self.ks = curva_dif[self.pos_max_dif]
     
+    def calcula_lift_alavancagem(self, decrescente = False, frac = 0.5):
+        qtd_ref = frac*self.qtd_tot
+        if(decrescente == False):
+            pos_ini = np.sum(self.qtds_acum <= qtd_ref) - 1
+            if(self.qtds_acum[pos_ini] == qtd_ref or pos_ini == self.qtds_acum.size - 1):
+                lift = self.qtds0_acum[pos_ini]/qtd_ref
+                alav = lift/frac
+            else:
+                qtd_ref_medio = (self.qtds_acum[pos_ini] + self.qtds_acum[pos_ini+1])/2
+                lift = (self.qtds0_acum[pos_ini] + self.qtds0_acum[pos_ini+1])/self.qtd0_tot
+                alav = lift*self.qtd_tot/qtd_ref_medio
+        else:
+            pos_ini = self.qtds_acum_c.size - np.sum(self.qtds_acum_c <= qtd_ref)
+            if(self.qtds_acum_c[pos_ini] == qtd_ref or pos_ini == 0):
+                lift = self.qtds1_acum_c[pos_ini]/qtd_ref
+                alav = lift/frac
+            else:
+                qtd_ref_medio = (self.qtds_acum_c[pos_ini] + self.qtds_acum_c[pos_ini-1])/2
+                lift = (self.qtds1_acum_c[pos_ini] + self.qtds1_acum_c[pos_ini-1])/self.qtd1_tot
+                alav = lift*self.qtd_tot/qtd_ref_medio
+        return lift, alav
+                
     def calcula_ig(self):
         #Calcula a Entropia de Shannon
         def entropia_shannon(p0, p1):
@@ -317,26 +335,23 @@ class Aletricas:
         p1 = self.qtd1_tot/self.qtd_tot
         entropia_ini = entropia_shannon(1-p1, p1)
 
-        if(entropia_ini == 0):
-            self.curva_ig = np.repeat(1, self.qtds_acum.size)
-        else:
-            #O último corte por definição não dá informação nenhuma, então nem faz a conta (por isso o [:-1])
-            qtds_acum = self.qtds_acum[:-1]
-            qtds1_acum = self.qtds1_acum[:-1]
-            p1_acum = qtds1_acum/qtds_acum
-            p0_acum = 1 - p1_acum
-            entropia_parcial = np.array([entropia_shannon(p0_acum[i], p1_acum[i]) for i in range(qtds_acum.size)]) 
+        #O último corte por definição não dá informação nenhuma, então nem faz a conta (por isso o [:-1])
+        qtds_acum = self.qtds_acum[:-1]
+        qtds1_acum = self.qtds1_acum[:-1]
+        p1_acum = qtds1_acum/qtds_acum
+        p0_acum = 1 - p1_acum
+        entropia_parcial = np.array([entropia_shannon(p0_acum[i], p1_acum[i]) for i in range(qtds_acum.size)]) 
 
-            qtds_acum_c = self.qtds_acum_c[:-1]
-            qtds1_acum_c = self.qtds1_acum_c[:-1]
-            p1c_acum = qtds1_acum_c/qtds_acum_c
-            p0c_acum = 1 - p1c_acum
-            entropia_parcial_c = np.array([entropia_shannon(p0c_acum[i], p1c_acum[i]) for i in range(qtds_acum_c.size)])
+        qtds_acum_c = self.qtds_acum_c[:-1]
+        qtds1_acum_c = self.qtds1_acum_c[:-1]
+        p1c_acum = qtds1_acum_c/qtds_acum_c
+        p0c_acum = 1 - p1c_acum
+        entropia_parcial_c = np.array([entropia_shannon(p0c_acum[i], p1c_acum[i]) for i in range(qtds_acum_c.size)])
 
-            entropia = (entropia_parcial*qtds_acum + entropia_parcial_c*qtds_acum_c)/self.qtd_tot
-            #Coloca o valor [-1] que removemos no começo do calcula da entropia
-            entropia = np.append(entropia, entropia_ini)
-            self.curva_ig = (entropia_ini - entropia)/entropia_ini
+        entropia = (entropia_parcial*qtds_acum + entropia_parcial_c*qtds_acum_c)/self.qtd_tot
+        #Coloca o valor [-1] que removemos no começo do calcula da entropia
+        entropia = np.append(entropia, entropia_ini)
+        self.curva_ig = (entropia_ini - entropia)/entropia_ini
         
         self.pos_max_ig = np.argmax(self.curva_ig) #Pega as posições em que encontrou o máximo
         #self.ig = np.max(self.curva_ig[self.pos_max_ig])
@@ -357,69 +372,89 @@ class Aletricas:
         p1_ini = self.qtd1_tot/self.qtd_tot
         entropia_ini = entropia_shannon(1-p1_ini, p1_ini) 
         
-        if(entropia_ini == 0):
-            vetor_p0_p1 = np.array([np.array([u, v]) for u in self.y_prob_unico[:-1] for v in self.y_prob_unico[:-1] if u < v])
-            self.vetor_p0_ig_2d = vetor_p0_p1[:, 0]
-            self.vetor_p1_ig_2d = vetor_p0_p1[:, 1]
-            self.vetor_ig_2d = np.repeat(1, self.vetor_p0_ig_2d.size)
-        else:
-            vetor_p0 = np.array([])
-            vetor_p1 = np.array([])
-            vetor_entropia = np.array([])
-            vetor_ig = np.array([])
-            # -1 pois como já discutido, o último corte por definição não trás ganho de informação
-            num_loop = self.y_prob_unico.size-1
-            #Subtrai mais um aqui pq queremos garantir que todo o loop tem um intervalo de resto
-            for i in range(num_loop-1):
-                start_loop2 = i + 1 #O segundo loop começa sempre 1 a frente pq queremos que sobre um intervalo de resto
-                vetor_p0 = np.append(vetor_p0, np.repeat(self.y_prob_unico[i], num_loop - start_loop2))
-                qtd_acum = self.qtds_acum[i]
-                qtd1_acum = self.qtds1_acum[i]
-                p1 = qtd1_acum/qtd_acum
-                entropia_parcial = entropia_shannon(1-p1, p1)
+        vetor_p0 = np.array([])
+        vetor_p1 = np.array([])
+        vetor_entropia = np.array([])
+        vetor_ig = np.array([])
+        # -1 pois como já discutido, o último corte por definição não trás ganho de informação
+        num_loop = self.y_prob_unico.size-1
+        #Subtrai mais um aqui pq queremos garantir que todo o loop tem um intervalo de resto
+        for i in range(num_loop-1):
+            start_loop2 = i + 1 #O segundo loop começa sempre 1 a frente pq queremos que sobre um intervalo de resto
+            vetor_p0 = np.append(vetor_p0, np.repeat(self.y_prob_unico[i], num_loop - start_loop2))
+            qtd_acum = self.qtds_acum[i]
+            qtd1_acum = self.qtds1_acum[i]
+            p1 = qtd1_acum/qtd_acum
+            entropia_parcial = entropia_shannon(1-p1, p1)
+            
+            entropia_aux = entropia_parcial*qtd_acum/self.qtd_tot
+            
+            #Segundo loop implicito nos vetores
+            vetor_p1 = np.append(vetor_p1, self.y_prob_unico[start_loop2:num_loop])
+            qtd_acum_c = self.qtds_acum_c[start_loop2:num_loop]
+            qtd1_acum_c = self.qtds1_acum_c[start_loop2:num_loop]
+            p1c = qtd1_acum_c/qtd_acum_c
+            p0c = 1 - p1c
+            entropia_parcial_c = np.array([entropia_shannon(1-p1c[i], p1c[i]) for i in range(qtd_acum_c.size)])
+            
+            qtd_resto = self.qtd_tot - qtd_acum - qtd_acum_c
+            qtd1_acum_resto = self.qtd1_tot - qtd1_acum - qtd1_acum_c
+            p1r = qtd1_acum_resto/qtd_resto
+            p0r = 1 - p1r
+            entropia_parcial_r = np.array([entropia_shannon(1-p1r[i], p1r[i]) for i in range(qtd_resto.size)])
+            
+            entropia = entropia_aux + (entropia_parcial_c*qtd_acum_c + entropia_parcial_r*qtd_resto)/self.qtd_tot
+            vetor_entropia = np.append(vetor_entropia, entropia)
                 
-                entropia_aux = entropia_parcial*qtd_acum/self.qtd_tot
-                
-                vetor_p1 = np.append(vetor_p1, self.y_prob_unico[start_loop2:num_loop])
-                qtd_acum_c = self.qtds_acum_c[start_loop2:num_loop]
-                qtd1_acum_c = self.qtds1_acum_c[start_loop2:num_loop]
-                p1c = qtd1_acum_c/qtd_acum_c
-                p0c = 1 - p1c
-                entropia_parcial_c = np.array([entropia_shannon(1-p1c[i], p1c[i]) for i in range(qtd_acum_c.size)])
-                
-                qtd_resto = self.qtd_tot - qtd_acum - qtd_acum_c
-                qtd1_acum_resto = self.qtd1_tot - qtd1_acum - qtd1_acum_c
-                p1r = qtd1_acum_resto/qtd_resto
-                p0r = 1 - p1r
-                entropia_parcial_r = np.array([entropia_shannon(1-p1r[i], p1r[i]) for i in range(qtd_resto.size)])
-                
-                entropia = entropia_aux + (entropia_parcial_c*qtd_acum_c + entropia_parcial_r*qtd_resto)/self.qtd_tot
-                vetor_entropia = np.append(vetor_entropia, entropia)
-                    
-            self.vetor_ig_2d = (entropia_ini - vetor_entropia)/entropia_ini
-            self.vetor_p0_ig_2d = vetor_p0
-            self.vetor_p1_ig_2d = vetor_p1
+        self.vetor_ig_2d = (entropia_ini - vetor_entropia)/entropia_ini
+        self.vetor_p0_ig_2d = vetor_p0
+        self.vetor_p1_ig_2d = vetor_p1
         
-        if(self.vetor_ig_2d.size > 0): #Se tem pelo menos um valor de ganho de informação
-            self.pos_max_ig_2d = np.argmax(self.vetor_ig_2d) #Pega as posições em que encontrou o máximo
-            try:
-                self.ig_2d = self.vetor_ig_2d[self.pos_max_ig_2d[0]] 
-            except:
-                self.ig_2d = self.vetor_ig_2d[self.pos_max_ig_2d]
+        self.pos_max_ig_2d = np.argmax(self.vetor_ig_2d) #Pega as posições em que encontrou o máximo
+        try:
+            self.ig_2d = self.vetor_ig_2d[self.pos_max_ig_2d[0]] 
+        except:
+            self.ig_2d = self.vetor_ig_2d[self.pos_max_ig_2d]
     
     def calcula_metricas(self):
         self.ordena_probs()
-        if(self.y_prob_unico.size > 1):
-            self.calcula_roc()
-            self.calcula_ks()
-            self.calcula_ig()
+        if(self.qtd0_tot*self.qtd1_tot > 0):
             if(self.y_prob_unico.size > 2):
+                self.calcula_roc()
+                self.calcula_ks()
+                self.liftF_10, self.alavF_10 = self.calcula_lift_alavancagem(decrescente = False, frac = 0.1)
+                self.liftF_20, self.alavF_20 = self.calcula_lift_alavancagem(decrescente = False, frac = 0.2)
+                self.liftV_10, self.alavV_10 = self.calcula_lift_alavancagem(decrescente = True, frac = 0.1)
+                self.liftV_20, self.alavV_20 = self.calcula_lift_alavancagem(decrescente = True, frac = 0.2)
+                self.calcula_ig()
                 self.calcula_ig_2d()
+            elif(self.y_prob_unico.size > 1):
+                self.calcula_roc()
+                self.calcula_ks()
+                self.liftF_10, self.alavF_10 = self.calcula_lift_alavancagem(decrescente = False, frac = 0.1)
+                self.liftF_20, self.alavF_20 = self.calcula_lift_alavancagem(decrescente = False, frac = 0.2)
+                self.liftV_10, self.alavV_10 = self.calcula_lift_alavancagem(decrescente = True, frac = 0.1)
+                self.liftV_20, self.alavV_20 = self.calcula_lift_alavancagem(decrescente = True, frac = 0.2)
+                self.calcula_ig()
     
-    def valor_metricas(self):
+    def valor_metricas(self, estatisticas_globais = True):
         d = {}
+        if(estatisticas_globais):
+            d['QTD'] = self.qtd_tot
+            d['QTD_1'] = self.qtd1_tot
+            d['Soma_Probs'] = self.soma_probs
+            d['Frac_1'] = self.qtd1_tot/self.qtd_tot
+            d['Prob_Media'] = self.soma_probs/self.qtd_tot 
         d['AUC'] = self.auc
         d['KS'] = self.ks
+        d['LiftF_10'] = self.liftF_10
+        d['LiftV_10'] = self.liftV_10
+        d['LiftF_20'] = self.liftF_20
+        d['LiftV_20'] = self.liftV_20
+        d['AlavF_10'] = self.alavF_10
+        d['AlavV_10'] = self.alavV_10
+        d['AlavF_20'] = self.alavF_20
+        d['AlavV_20'] = self.alavV_20
         d['IG'] = self.ig
         d['IG_2D'] = self.ig_2d
         return pd.Series(d, index = d.keys())
@@ -453,50 +488,73 @@ class Aletricas:
             fig, axs = plt.subplots(1, 1, figsize = [6, 4])
             if(self.y_prob_unico.size > 1):
                 axs.plot(self.curva_tnp, self.curva_tvp, color = 'blue', label = 'Curva ROC')
-                axs.plot([0, 1], [1, 0], color='k', linestyle='--', label = 'Linha de Ref.')
+                axs.plot([0, 1], [1, 0], color = 'k', linestyle = '--', label = 'Linha de Ref.')
+                plt.gcf().text(1, 0.5, 'AUC = ' + '%.2g' % self.auc, bbox = dict(facecolor = 'white', edgecolor = 'k', boxstyle = 'round'))
                 axs.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
             axs.set_xlabel('Taxa de Verdadeiro Negativo')
             axs.set_ylabel('Taxa de Verdadeiro Positivo')
             plt.show()
         
-    def grafico_revocacao(self):
-        if(self.num_por_div != None):
-            y_prob_plot = [x for y in zip(self.interv.min_ajust, self.interv.max_ajust) for x in y]
-            curva_revoc0_plot = np.repeat(self.curva_revoc0, 2)
-            curva_revoc1_plot = np.repeat(self.curva_revoc1, 2)
-            pos_max = (self.interv.min_ajust[self.pos_max_dif] + self.interv.max_ajust[self.pos_max_dif])/2
-        else:
-            y_prob_plot = self.y_prob_unico
-            curva_revoc0_plot = self.curva_revoc0
-            curva_revoc1_plot = self.curva_revoc1
-            pos_max = self.y_prob_unico[self.pos_max_dif]
-        
+    def grafico_revocacao(self):        
         with sns.axes_style("whitegrid"):
             fig, axs = plt.subplots(1, 1, figsize = [6, 4])
             if(self.y_prob_unico.size > 1):
-                axs.plot(y_prob_plot, curva_revoc0_plot, color = 'blue', label = 'Revocação_0')
-                axs.plot(y_prob_plot, curva_revoc1_plot, color = 'red', label = 'Revocação_1')
-                axs.vlines(pos_max, 0, 1, linestyle='--')
+            
+                if(self.num_por_div != None):
+                    y_prob_plot = [x for y in zip(self.interv.min_ajust, self.interv.max_ajust) for x in y]
+                    curva_revoc0_plot = np.repeat(self.curva_revoc0, 2)
+                    curva_revoc1_plot = np.repeat(self.curva_revoc1, 2)
+                    pos_max = (self.interv.min_ajust[self.pos_max_dif] + self.interv.max_ajust[self.pos_max_dif])/2
+                else:
+                    y_prob_plot = self.y_prob_unico
+                    curva_revoc0_plot = self.curva_revoc0
+                    curva_revoc1_plot = self.curva_revoc1
+                    pos_max = self.y_prob_unico[self.pos_max_dif]
+                    
+                axs.plot(y_prob_plot, curva_revoc0_plot, color = 'blue', label = 'Revocação 0')
+                axs.plot(y_prob_plot, curva_revoc1_plot, color = 'red', label = 'Revocação 1')
+                axs.vlines(pos_max, 0, 1, color = 'k', linestyle = '--', label = 'Ponto KS')
+                plt.gcf().text(1, 0.5, 'KS = ' + '%.2g' % self.ks, bbox = dict(facecolor = 'white', edgecolor = 'k', boxstyle = 'round'))
                 axs.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
             axs.set_xlabel('Probabilidade de Corte')
             axs.set_ylabel('Revocação')
             plt.show()
     
-    def grafico_informacao(self):
-        if(self.num_por_div != None):
-            y_prob_plot = [x for y in zip(self.interv.min_ajust, self.interv.max_ajust) for x in y]
-            curva_ig_plot = np.repeat(self.curva_ig, 2)
-            pos_max = (self.interv.min_ajust[self.pos_max_ig] + self.interv.max_ajust[self.pos_max_ig])/2
-        else:
-            y_prob_plot = self.y_prob_unico
-            curva_ig_plot = self.curva_ig
-            pos_max = self.y_prob_unico[self.pos_max_ig]
-        
+    def grafico_informacao(self, mostrar_probs_2d = False):
         with sns.axes_style("whitegrid"):
             fig, axs = plt.subplots(1, 1, figsize = [6, 4])
             if(self.y_prob_unico.size > 1):
-                axs.plot(y_prob_plot, curva_ig_plot, color = 'blue', label = 'Ganho de Informação')
-                axs.vlines(pos_max, 0, self.ig, linestyle='--')
+            
+                if(self.num_por_div != None):
+                    y_prob_plot = [x for y in zip(self.interv.min_ajust, self.interv.max_ajust) for x in y]
+                    curva_ig_plot = np.repeat(self.curva_ig, 2)
+                    pos_max = (self.interv.min_ajust[self.pos_max_ig] + self.interv.max_ajust[self.pos_max_ig])/2
+                    #Se eu quiser plotar o intervalo de prob "confiável" calculado com a informação 2D
+                    if(mostrar_probs_2d and self.pos_max_ig_2d != None):
+                        pos_p0_aux = int(self.vetor_p0_ig_2d[self.pos_max_ig_2d])
+                        pos_p1_aux = int(self.vetor_p1_ig_2d[self.pos_max_ig_2d])
+                        p0_corte = (self.interv.min_ajust[pos_p0_aux] + self.interv.max_ajust[pos_p0_aux])/2
+                        p1_corte = (self.interv.min_ajust[pos_p1_aux] + self.interv.max_ajust[pos_p1_aux])/2
+                else:
+                    y_prob_plot = self.y_prob_unico
+                    curva_ig_plot = self.curva_ig
+                    pos_max = self.y_prob_unico[self.pos_max_ig]
+                    if(mostrar_probs_2d and self.pos_max_ig_2d != None):
+                        p0_corte = self.vetor_p0_ig_2d[self.pos_max_ig_2d]
+                        p1_corte = self.vetor_p1_ig_2d[self.pos_max_ig_2d]
+                    
+                axs.plot(y_prob_plot, curva_ig_plot, color = 'blue', label = 'Curva IG')
+                axs.vlines(pos_max, 0, self.ig, color = 'k', linestyle = '--', label = 'Ganho Máx.')
+                if(mostrar_probs_2d and self.pos_max_ig_2d != None):
+                    axs.vlines(p0_corte, 0, self.ig_2d, color = 'gray', linestyle = '--', label = 'Ganho Máx. 2D')
+                    axs.vlines(p1_corte, 0, self.ig_2d, color = 'gray', linestyle = '--')
+                    plt.gcf().text(1, 0.5, 'IG = ' + '%.2g' % self.ig + '\n' + 'IG 2D = ' + '%.2g' % self.ig_2d, 
+                                   bbox = dict(facecolor = 'white', edgecolor = 'k', boxstyle = 'round'))
+                    plt.gcf().text(1, 0.3, 'Prob Corte = ' + '%.2g' % pos_max + '\n\n' + 'Prob0 Corte = ' + '%.2g' % p0_corte + '\n' + 'Prob1 Corte = ' + '%.2g' % p1_corte, 
+                                   bbox = dict(facecolor = 'white', edgecolor = 'k', boxstyle = 'round'))
+                else:
+                    plt.gcf().text(1, 0.5, 'IG = ' + '%.2g' % self.ig, bbox = dict(facecolor = 'white', edgecolor = 'k', boxstyle = 'round'))
+                    plt.gcf().text(1, 0.3, 'Prob Corte = ' + '%.2g' % pos_max, bbox = dict(facecolor = 'white', edgecolor = 'k', boxstyle = 'round'))
                 axs.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
             axs.set_xlabel('Probabilidade de Corte')
             axs.set_ylabel('Ganho de Informação')
@@ -507,30 +565,22 @@ class Aletricas:
             fig = plt.figure(figsize = [8, 6])
             axs = fig.add_subplot(111, projection='3d')
             if(self.y_prob_unico.size > 2):
+            
+                if(self.num_por_div != None):
+                    vetor_prob = (self.interv.min_ajust + self.interv.max_ajust)/2
+                    x = vetor_prob[self.vetor_p0_ig_2d.astype(int)]
+                    y = vetor_prob[self.vetor_p1_ig_2d.astype(int)]
+                else:
+                    x = self.vetor_p0_ig_2d
+                    y = self.vetor_p1_ig_2d
+            
                 cmap = plt.get_cmap("Blues") #Mapa de cores
                 col = np.arange(self.vetor_ig_2d.size)
                 #plot_trisurf
-                axs.scatter(self.vetor_p0_ig_2d, self.vetor_p1_ig_2d, self.vetor_ig_2d, 
-                            c = self.vetor_ig_2d, marker = 'o', cmap = cmap, alpha = 1)
+                axs.scatter(x, y, self.vetor_ig_2d, c = self.vetor_ig_2d, marker = 'o', cmap = cmap, alpha = 1)
             axs.set_xlabel('Probabilidade de Corte 0')
             axs.set_ylabel('Probabilidade de Corte 1')
             axs.set_zlabel('Ganho de Informação')
             plt.show()
-        
-    def grafico_informacao_2d_plotly(self):
-        if(self.y_prob_unico.size > 2):
-            data = [go.Scatter3d(x = self.vetor_p0_ig_2d, y = self.vetor_p1_ig_2d, z = self.vetor_ig_2d,
-                                 mode = 'markers', 
-                                 marker = dict(size=5,color=self.vetor_ig_2d, colorscale='Viridis',opacity=0.8))]
-            layout = go.Layout(
-                showlegend = True,
-                scene = go.layout.Scene(
-                    xaxis = go.layout.scene.XAxis(title='Prob0'),
-                    yaxis = go.layout.scene.YAxis(title='Prob1'),
-                    zaxis = go.layout.scene.ZAxis(title='IG_2D')
-                )
-            )
-            fig = go.Figure(data = data, layout = layout)
-            fig.show()
 
 ##############################
